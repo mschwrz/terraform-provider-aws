@@ -3,6 +3,7 @@ package vpclattice
 import (
 	"context"
 	"errors"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/id"
 	"log"
 	"time"
 
@@ -74,45 +75,17 @@ const (
 )
 
 func resourceServiceNetworkServiceAssociationCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	// TIP: ==== RESOURCE CREATE ====
-	// Generally, the Create function should do the following things. Make
-	// sure there is a good reason if you don't do one of these.
-	//
-	// 1. Get a client connection to the relevant service
-	// 2. Populate a create input structure
-	// 3. Call the AWS create/put function
-	// 4. Using the output from the create function, set the minimum arguments
-	//    and attributes for the Read function to work. At a minimum, set the
-	//    resource ID. E.g., d.SetId(<Identifier, such as AWS ID or ARN>)
-	// 5. Use a waiter to wait for create to complete
-	// 6. Call the Read function in the Create return
-
-	// TIP: -- 1. Get a client connection to the relevant service
 	conn := meta.(*conns.AWSClient).VPCLatticeClient()
 
-	// TIP: -- 2. Populate a create input structure
+	serviceIdentifier := d.Get("service_identifier").(string)
+	serviceNetworkIdentifier := d.Get("service_network_identifier").(string)
+
 	in := &vpclattice.CreateServiceNetworkServiceAssociationInput{
-		// TIP: Mandatory or fields that will always be present can be set when
-		// you create the Input structure. (Replace these with real fields.)
-		ServiceNetworkServiceAssociationName: aws.String(d.Get("name").(string)),
-		ServiceNetworkServiceAssociationType: aws.String(d.Get("type").(string)),
+		ServiceIdentifier:        aws.String(serviceIdentifier),
+		ServiceNetworkIdentifier: aws.String(serviceNetworkIdentifier),
+		ClientToken:              aws.String(id.UniqueId()),
 	}
 
-	if v, ok := d.GetOk("max_size"); ok {
-		// TIP: Optional fields should be set based on whether or not they are
-		// used.
-		in.MaxSize = aws.Int64(int64(v.(int)))
-	}
-
-	if v, ok := d.GetOk("complex_argument"); ok && len(v.([]interface{})) > 0 {
-		// TIP: Use an expander to assign a complex argument.
-		in.ComplexArguments = expandComplexArguments(v.([]interface{}))
-	}
-
-	// TIP: Not all resources support tags and tags don't always make sense. If
-	// your resource doesn't need tags, you can remove the tags lines here and
-	// below. Many resources do include tags so this a reminder to include them
-	// where possible.
 	defaultTagsConfig := meta.(*conns.AWSClient).DefaultTagsConfig
 	tags := defaultTagsConfig.MergeTags(tftags.New(ctx, d.Get("tags").(map[string]interface{})))
 
@@ -120,28 +93,21 @@ func resourceServiceNetworkServiceAssociationCreate(ctx context.Context, d *sche
 		in.Tags = Tags(tags.IgnoreAWS())
 	}
 
-	// TIP: -- 3. Call the AWS create function
 	out, err := conn.CreateServiceNetworkServiceAssociation(ctx, in)
 	if err != nil {
-		// TIP: Since d.SetId() has not been called yet, you cannot use d.Id()
-		// in error messages at this point.
-		return create.DiagError(names.VPCLattice, create.ErrActionCreating, ResNameServiceNetworkServiceAssociation, d.Get("name").(string), err)
+		return diag.Errorf("creating Service Network Service Association", err)
 	}
 
-	if out == nil || out.ServiceNetworkServiceAssociation == nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionCreating, ResNameServiceNetworkServiceAssociation, d.Get("name").(string), errors.New("empty output"))
+	if out == nil {
+		return diag.Errorf("received empty response while creating Service Network Service Association", err)
 	}
 
-	// TIP: -- 4. Set the minimum arguments and/or attributes for the Read function to
-	// work.
-	d.SetId(aws.ToString(out.ServiceNetworkServiceAssociation.ServiceNetworkServiceAssociationID))
+	d.SetId(aws.ToString(out.Arn))
 
-	// TIP: -- 5. Use a waiter to wait for create to complete
 	if _, err := waitServiceNetworkServiceAssociationCreated(ctx, conn, d.Id(), d.Timeout(schema.TimeoutCreate)); err != nil {
 		return create.DiagError(names.VPCLattice, create.ErrActionWaitingForCreation, ResNameServiceNetworkServiceAssociation, d.Id(), err)
 	}
 
-	// TIP: -- 6. Call the Read function in the Create return
 	return resourceServiceNetworkServiceAssociationRead(ctx, d, meta)
 }
 
@@ -351,17 +317,6 @@ func resourceServiceNetworkServiceAssociationDelete(ctx context.Context, d *sche
 	return nil
 }
 
-// TIP: ==== STATUS CONSTANTS ====
-// Create constants for states and statuses if the service does not
-// already have suitable constants. We prefer that you use the constants
-// provided in the service if available (e.g., amp.WorkspaceStatusCodeActive).
-const (
-	statusChangePending = "Pending"
-	statusDeleting      = "Deleting"
-	statusNormal        = "Normal"
-	statusUpdated       = "Updated"
-)
-
 // TIP: ==== WAITERS ====
 // Some resources of some services have waiters provided by the AWS API.
 // Unless they do not work properly, use them rather than defining new ones
@@ -376,10 +331,10 @@ const (
 //
 // You will need to adjust the parameters and names to fit the service.
 
-func waitServiceNetworkServiceAssociationCreated(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.ServiceNetworkServiceAssociation, error) {
+func waitServiceNetworkServiceAssociationCreated(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.GetServiceNetworkServiceAssociationOutput, error) {
 	stateConf := &retry.StateChangeConf{
-		Pending:                   []string{},
-		Target:                    []string{statusNormal},
+		Pending:                   []string{string(types.ServiceNetworkServiceAssociationStatusCreateInProgress)},
+		Target:                    []string{string(types.ServiceNetworkServiceAssociationStatusActive)},
 		Refresh:                   statusServiceNetworkServiceAssociation(ctx, conn, id),
 		Timeout:                   timeout,
 		NotFoundChecks:            20,
@@ -387,7 +342,8 @@ func waitServiceNetworkServiceAssociationCreated(ctx context.Context, conn *vpcl
 	}
 
 	outputRaw, err := stateConf.WaitForStateContext(ctx)
-	if out, ok := outputRaw.(*vpclattice.ServiceNetworkServiceAssociation); ok {
+	//check what can be used
+	if out, ok := outputRaw.(*vpclattice.GetServiceNetworkServiceAssociationOutput); ok {
 		return out, err
 	}
 
@@ -465,7 +421,7 @@ func statusServiceNetworkServiceAssociation(ctx context.Context, conn *vpclattic
 // comes in handy in other places besides the status function. As a result, it
 // is good practice to define it separately.
 
-func findServiceNetworkServiceAssociationByID(ctx context.Context, conn *vpclattice.Client, id string) (*vpclattice.ServiceNetworkServiceAssociation, error) {
+func findServiceNetworkServiceAssociationByID(ctx context.Context, conn *vpclattice.Client, id string) (*vpclattice.GetServiceNetworkServiceAssociationOutput, error) {
 	in := &vpclattice.GetServiceNetworkServiceAssociationInput{
 		Id: aws.String(id),
 	}
@@ -482,11 +438,11 @@ func findServiceNetworkServiceAssociationByID(ctx context.Context, conn *vpclatt
 		return nil, err
 	}
 
-	if out == nil || out.ServiceNetworkServiceAssociation == nil {
+	if out == nil {
 		return nil, tfresource.NewEmptyResultError(in)
 	}
 
-	return out.ServiceNetworkServiceAssociation, nil
+	return out, nil
 }
 
 // TIP: ==== FLEX ====
