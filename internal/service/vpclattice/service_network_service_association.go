@@ -43,14 +43,6 @@ func ResourceServiceNetworkServiceAssociation() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
-			"dns_name": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
-			"hosted_zone_id": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
 			"service_identifier": {
 				Type:     schema.TypeString,
 				Required: true,
