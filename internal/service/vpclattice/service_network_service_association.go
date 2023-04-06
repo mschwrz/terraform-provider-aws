@@ -3,6 +3,8 @@ package vpclattice
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/id"
 	"github.com/hashicorp/terraform-provider-aws/internal/errs/sdkdiag"
 	"log"
@@ -14,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/structure"
 	"github.com/hashicorp/terraform-provider-aws/internal/conns"
 	"github.com/hashicorp/terraform-provider-aws/internal/create"
 	tftags "github.com/hashicorp/terraform-provider-aws/internal/tags"
@@ -28,8 +29,8 @@ func ResourceServiceNetworkServiceAssociation() *schema.Resource {
 	return &schema.Resource{
 		CreateWithoutTimeout: resourceServiceNetworkServiceAssociationCreate,
 		ReadWithoutTimeout:   resourceServiceNetworkServiceAssociationRead,
-		UpdateWithoutTimeout: resourceServiceNetworkServiceAssociationUpdate,
-		DeleteWithoutTimeout: resourceServiceNetworkServiceAssociationDelete,
+		//UpdateWithoutTimeout: resourceServiceNetworkServiceAssociationUpdate,
+		//DeleteWithoutTimeout: resourceServiceNetworkServiceAssociationDelete,
 
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
@@ -97,22 +98,11 @@ func resourceServiceNetworkServiceAssociationCreate(ctx context.Context, d *sche
 }
 
 func resourceServiceNetworkServiceAssociationRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	// TIP: ==== RESOURCE READ ====
-	// Generally, the Read function should do the following things. Make
-	// sure there is a good reason if you don't do one of these.
-	//
-	// 1. Get a client connection to the relevant service
-	// 2. Get the resource from AWS
-	// 3. Set ID to empty where resource is not new and not found
-	// 4. Set the arguments and attributes
-	// 5. Set the tags
-	// 6. Return nil
 	var diags diag.Diagnostics
 	conn := meta.(*conns.AWSClient).VPCLatticeClient()
 
 	out, err := findServiceNetworkServiceAssociationByID(ctx, conn, d.Id())
 
-	// TIP: -- 3. Set ID to empty where resource is not new and not found
 	if !d.IsNewResource() && tfresource.NotFound(err) {
 		log.Printf("[WARN] VPCLattice ServiceNetworkServiceAssociation (%s) not found, removing from state", d.Id())
 		d.SetId("")
@@ -123,53 +113,19 @@ func resourceServiceNetworkServiceAssociationRead(ctx context.Context, d *schema
 		return sdkdiag.AppendErrorf(diags, "reading service-network service-association (%s): %s", d.Id(), err)
 	}
 
-	// TIP: -- 4. Set the arguments and attributes
-	//
-	// For simple data types (i.e., schema.TypeString, schema.TypeBool,
-	// schema.TypeInt, and schema.TypeFloat), a simple Set call (e.g.,
-	// d.Set("arn", out.Arn) is sufficient. No error or nil checking is
-	// necessary.
-	//
-	// However, there are some situations where more handling is needed.
-	// a. Complex data types (e.g., schema.TypeList, schema.TypeSet)
-	// b. Where errorneous diffs occur. For example, a schema.TypeString may be
-	//    a JSON. AWS may return the JSON in a slightly different order but it
-	//    is equivalent to what is already set. In that case, you may check if
-	//    it is equivalent before setting the different JSON.
-	d.Set("arn", out.Arn)
-	d.Set("name", out.)
+	d.Set("arn", arn.ARN{
+		Partition: meta.(*conns.AWSClient).Partition,
+		Service:   "vpclattice",
+		Region:    meta.(*conns.AWSClient).Region,
+		AccountID: meta.(*conns.AWSClient).AccountID,
+		Resource:  fmt.Sprintf("service-network-service-association/%s", d.Id()),
+	}.String())
+	d.Set("service_identifier", out.ServiceId)
+	d.Set("service_network_identifier", out.ServiceNetworkId)
 
-	// TIP: Setting a complex type.
-	// For more information, see:
-	// https://hashicorp.github.io/terraform-provider-aws/data-handling-and-conversion/#data-handling-and-conversion
-	// https://hashicorp.github.io/terraform-provider-aws/data-handling-and-conversion/#flatten-functions-for-blocks
-	// https://hashicorp.github.io/terraform-provider-aws/data-handling-and-conversion/#root-typeset-of-resource-and-aws-list-of-structure
-	if err := d.Set("complex_argument", flattenComplexArguments(out.ComplexArguments)); err != nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionSetting, ResNameServiceNetworkServiceAssociation, d.Id(), err)
-	}
-
-	// TIP: Setting a JSON string to avoid errorneous diffs.
-	p, err := verify.SecondJSONUnlessEquivalent(d.Get("policy").(string), aws.ToString(out.Policy))
-	if err != nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionSetting, ResNameServiceNetworkServiceAssociation, d.Id(), err)
-	}
-
-	p, err = structure.NormalizeJsonString(p)
-	if err != nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionSetting, ResNameServiceNetworkServiceAssociation, d.Id(), err)
-	}
-
-	d.Set("policy", p)
-
-	// TIP: -- 5. Set the tags
-	//
-	// TIP: Not all resources support tags and tags don't always make sense. If
-	// your resource doesn't need tags, you can remove the tags lines here and
-	// below. Many resources do include tags so this a reminder to include them
-	// where possible.
 	tags, err := ListTags(ctx, conn, d.Id())
 	if err != nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionReading, ResNameServiceNetworkServiceAssociation, d.Id(), err)
+		return create.DiagError(names.VPCLattice, "listing tags", ResNameServiceNetworkServiceAssociation, d.Id(), err)
 	}
 
 	defaultTagsConfig := meta.(*conns.AWSClient).DefaultTagsConfig
@@ -177,18 +133,12 @@ func resourceServiceNetworkServiceAssociationRead(ctx context.Context, d *schema
 	tags = tags.IgnoreAWS().IgnoreConfig(ignoreTagsConfig)
 
 	if err := d.Set("tags", tags.RemoveDefaultConfig(defaultTagsConfig).Map()); err != nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionSetting, ResNameServiceNetworkServiceAssociation, d.Id(), err)
+		return diag.Errorf("setting tags: %s", err)
 	}
-
-	if err := d.Set("tags_all", tags.Map()); err != nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionSetting, ResNameServiceNetworkServiceAssociation, d.Id(), err)
-	}
-
-	// TIP: -- 6. Return nil
-	return nil
+	return diags
 }
 
-func resourceServiceNetworkServiceAssociationUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+/*func resourceServiceNetworkServiceAssociationUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	// TIP: ==== RESOURCE UPDATE ====
 	// Not all resources have Update functions. There are a few reasons:
 	// a. The AWS API does not support changing a resource
@@ -297,7 +247,7 @@ func resourceServiceNetworkServiceAssociationDelete(ctx context.Context, d *sche
 
 	// TIP: -- 5. Return nil
 	return nil
-}
+}*/
 
 func waitServiceNetworkServiceAssociationCreated(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.GetServiceNetworkServiceAssociationOutput, error) {
 	stateConf := &retry.StateChangeConf{
@@ -388,125 +338,4 @@ func findServiceNetworkServiceAssociationByID(ctx context.Context, conn *vpclatt
 	}
 
 	return out, nil
-}
-
-// TIP: ==== FLEX ====
-// Flatteners and expanders ("flex" functions) help handle complex data
-// types. Flatteners take an API data type and return something you can use in
-// a d.Set() call. In other words, flatteners translate from AWS -> Terraform.
-//
-// On the other hand, expanders take a Terraform data structure and return
-// something that you can send to the AWS API. In other words, expanders
-// translate from Terraform -> AWS.
-//
-// See more:
-// https://hashicorp.github.io/terraform-provider-aws/data-handling-and-conversion/
-func flattenComplexArgument(apiObject *vpclattice.ComplexArgument) map[string]interface{} {
-	if apiObject == nil {
-		return nil
-	}
-
-	m := map[string]interface{}{}
-
-	if v := apiObject.SubFieldOne; v != nil {
-		m["sub_field_one"] = aws.ToString(v)
-	}
-
-	if v := apiObject.SubFieldTwo; v != nil {
-		m["sub_field_two"] = aws.ToString(v)
-	}
-
-	return m
-}
-
-// TIP: Often the AWS API will return a slice of structures in response to a
-// request for information. Sometimes you will have set criteria (e.g., the ID)
-// that means you'll get back a one-length slice. This plural function works
-// brilliantly for that situation too.
-func flattenComplexArguments(apiObjects []*vpclattice.ComplexArgument) []interface{} {
-	if len(apiObjects) == 0 {
-		return nil
-	}
-
-	var l []interface{}
-
-	for _, apiObject := range apiObjects {
-		if apiObject == nil {
-			continue
-		}
-
-		l = append(l, flattenComplexArgument(apiObject))
-	}
-
-	return l
-}
-
-// TIP: Remember, as mentioned above, expanders take a Terraform data structure
-// and return something that you can send to the AWS API. In other words,
-// expanders translate from Terraform -> AWS.
-//
-// See more:
-// https://hashicorp.github.io/terraform-provider-aws/data-handling-and-conversion/
-func expandComplexArgument(tfMap map[string]interface{}) *vpclattice.ComplexArgument {
-	if tfMap == nil {
-		return nil
-	}
-
-	a := &vpclattice.ComplexArgument{}
-
-	if v, ok := tfMap["sub_field_one"].(string); ok && v != "" {
-		a.SubFieldOne = aws.String(v)
-	}
-
-	if v, ok := tfMap["sub_field_two"].(string); ok && v != "" {
-		a.SubFieldTwo = aws.String(v)
-	}
-
-	return a
-}
-
-// TIP: Even when you have a list with max length of 1, this plural function
-// works brilliantly. However, if the AWS API takes a structure rather than a
-// slice of structures, you will not need it.
-func expandComplexArguments(tfList []interface{}) []*vpclattice.ComplexArgument {
-	// TIP: The AWS API can be picky about whether you send a nil or zero-
-	// length for an argument that should be cleared. For example, in some
-	// cases, if you send a nil value, the AWS API interprets that as "make no
-	// changes" when what you want to say is "remove everything." Sometimes
-	// using a zero-length list will cause an error.
-	//
-	// As a result, here are two options. Usually, option 1, nil, will work as
-	// expected, clearing the field. But, test going from something to nothing
-	// to make sure it works. If not, try the second option.
-
-	// TIP: Option 1: Returning nil for zero-length list
-	if len(tfList) == 0 {
-		return nil
-	}
-
-	var s []*vpclattice.ComplexArgument
-
-	// TIP: Option 2: Return zero-length list for zero-length list. If option 1 does
-	// not work, after testing going from something to nothing (if that is
-	// possible), uncomment out the next line and remove option 1.
-	//
-	// s := make([]*vpclattice.ComplexArgument, 0)
-
-	for _, r := range tfList {
-		m, ok := r.(map[string]interface{})
-
-		if !ok {
-			continue
-		}
-
-		a := expandComplexArgument(m)
-
-		if a == nil {
-			continue
-		}
-
-		s = append(s, a)
-	}
-
-	return s
 }
