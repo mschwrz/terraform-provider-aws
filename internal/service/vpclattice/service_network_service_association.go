@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/id"
+	"github.com/hashicorp/terraform-provider-aws/internal/errs/sdkdiag"
 	"log"
 	"time"
 
@@ -50,10 +51,6 @@ func ResourceServiceNetworkServiceAssociation() *schema.Resource {
 			"service_network_identifier": {
 				Type:     schema.TypeString,
 				Required: true,
-			},
-			"status": {
-				Type:     schema.TypeString,
-				Computed: true,
 			},
 			names.AttrTags: tftags.TagsSchema(),
 		},
@@ -114,23 +111,20 @@ func resourceServiceNetworkServiceAssociationRead(ctx context.Context, d *schema
 	// 4. Set the arguments and attributes
 	// 5. Set the tags
 	// 6. Return nil
-
-	// TIP: -- 1. Get a client connection to the relevant service
+	var diags diag.Diagnostics
 	conn := meta.(*conns.AWSClient).VPCLatticeClient()
 
-	// TIP: -- 2. Get the resource from AWS using an API Get, List, or Describe-
-	// type function, or, better yet, using a finder.
 	out, err := findServiceNetworkServiceAssociationByID(ctx, conn, d.Id())
 
 	// TIP: -- 3. Set ID to empty where resource is not new and not found
 	if !d.IsNewResource() && tfresource.NotFound(err) {
 		log.Printf("[WARN] VPCLattice ServiceNetworkServiceAssociation (%s) not found, removing from state", d.Id())
 		d.SetId("")
-		return nil
+		return diags
 	}
 
 	if err != nil {
-		return create.DiagError(names.VPCLattice, create.ErrActionReading, ResNameServiceNetworkServiceAssociation, d.Id(), err)
+		return sdkdiag.AppendErrorf(diags, "reading service-network service-association (%s): %s", d.Id(), err)
 	}
 
 	// TIP: -- 4. Set the arguments and attributes
@@ -147,7 +141,7 @@ func resourceServiceNetworkServiceAssociationRead(ctx context.Context, d *schema
 	//    is equivalent to what is already set. In that case, you may check if
 	//    it is equivalent before setting the different JSON.
 	d.Set("arn", out.Arn)
-	d.Set("name", out.Name)
+	d.Set("name", out.)
 
 	// TIP: Setting a complex type.
 	// For more information, see:
@@ -376,15 +370,9 @@ func statusServiceNetworkServiceAssociation(ctx context.Context, conn *vpclattic
 	}
 }
 
-// TIP: ==== FINDERS ====
-// The find function is not strictly necessary. You could do the API
-// request from the status function. However, we have found that find often
-// comes in handy in other places besides the status function. As a result, it
-// is good practice to define it separately.
-
 func findServiceNetworkServiceAssociationByID(ctx context.Context, conn *vpclattice.Client, id string) (*vpclattice.GetServiceNetworkServiceAssociationOutput, error) {
 	in := &vpclattice.GetServiceNetworkServiceAssociationInput{
-		Id: aws.String(id),
+		ServiceNetworkServiceAssociationIdentifier: aws.String(id),
 	}
 	out, err := conn.GetServiceNetworkServiceAssociation(ctx, in)
 	if err != nil {
