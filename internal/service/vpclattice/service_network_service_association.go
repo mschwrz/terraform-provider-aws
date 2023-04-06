@@ -40,10 +40,6 @@ func ResourceServiceNetworkServiceAssociation() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
-			"created_by": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
 			"service_identifier": {
 				Type:     schema.TypeString,
 				Required: true,
