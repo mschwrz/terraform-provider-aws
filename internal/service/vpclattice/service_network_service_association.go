@@ -317,20 +317,6 @@ func resourceServiceNetworkServiceAssociationDelete(ctx context.Context, d *sche
 	return nil
 }
 
-// TIP: ==== WAITERS ====
-// Some resources of some services have waiters provided by the AWS API.
-// Unless they do not work properly, use them rather than defining new ones
-// here.
-//
-// Sometimes we define the wait, status, and find functions in separate
-// files, wait.go, status.go, and find.go. Follow the pattern set out in the
-// service and define these where it makes the most sense.
-//
-// If these functions are used in the _test.go file, they will need to be
-// exported (i.e., capitalized).
-//
-// You will need to adjust the parameters and names to fit the service.
-
 func waitServiceNetworkServiceAssociationCreated(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.GetServiceNetworkServiceAssociationOutput, error) {
 	stateConf := &retry.StateChangeConf{
 		Pending:                   []string{string(types.ServiceNetworkServiceAssociationStatusCreateInProgress)},
@@ -342,7 +328,6 @@ func waitServiceNetworkServiceAssociationCreated(ctx context.Context, conn *vpcl
 	}
 
 	outputRaw, err := stateConf.WaitForStateContext(ctx)
-	//check what can be used
 	if out, ok := outputRaw.(*vpclattice.GetServiceNetworkServiceAssociationOutput); ok {
 		return out, err
 	}
@@ -350,15 +335,10 @@ func waitServiceNetworkServiceAssociationCreated(ctx context.Context, conn *vpcl
 	return nil, err
 }
 
-// TIP: It is easier to determine whether a resource is updated for some
-// resources than others. The best case is a status flag that tells you when
-// the update has been fully realized. Other times, you can check to see if a
-// key resource argument is updated to a new value or not.
-
-func waitServiceNetworkServiceAssociationUpdated(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.ServiceNetworkServiceAssociation, error) {
+func waitServiceNetworkServiceAssociationUpdated(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.GetServiceNetworkServiceAssociationOutput, error) {
 	stateConf := &retry.StateChangeConf{
-		Pending:                   []string{statusChangePending},
-		Target:                    []string{statusUpdated},
+		Pending:                   []string{string(types.ServiceNetworkServiceAssociationStatusCreateInProgress)},
+		Target:                    []string{string(types.ServiceNetworkServiceAssociationStatusActive)},
 		Refresh:                   statusServiceNetworkServiceAssociation(ctx, conn, id),
 		Timeout:                   timeout,
 		NotFoundChecks:            20,
@@ -366,39 +346,28 @@ func waitServiceNetworkServiceAssociationUpdated(ctx context.Context, conn *vpcl
 	}
 
 	outputRaw, err := stateConf.WaitForStateContext(ctx)
-	if out, ok := outputRaw.(*vpclattice.ServiceNetworkServiceAssociation); ok {
+	if out, ok := outputRaw.(*vpclattice.GetServiceNetworkServiceAssociationOutput); ok {
 		return out, err
 	}
 
 	return nil, err
 }
 
-// TIP: A deleted waiter is almost like a backwards created waiter. There may
-// be additional pending states, however.
-
-func waitServiceNetworkServiceAssociationDeleted(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.ServiceNetworkServiceAssociation, error) {
+func waitServiceNetworkServiceAssociationDeleted(ctx context.Context, conn *vpclattice.Client, id string, timeout time.Duration) (*vpclattice.GetServiceNetworkServiceAssociationOutput, error) {
 	stateConf := &retry.StateChangeConf{
-		Pending: []string{statusDeleting, statusNormal},
+		Pending: []string{string(types.ServiceNetworkServiceAssociationStatusDeleteInProgress), string(types.ServiceNetworkServiceAssociationStatusActive)},
 		Target:  []string{},
 		Refresh: statusServiceNetworkServiceAssociation(ctx, conn, id),
 		Timeout: timeout,
 	}
 
 	outputRaw, err := stateConf.WaitForStateContext(ctx)
-	if out, ok := outputRaw.(*vpclattice.ServiceNetworkServiceAssociation); ok {
+	if out, ok := outputRaw.(*vpclattice.GetServiceNetworkServiceAssociationOutput); ok {
 		return out, err
 	}
 
 	return nil, err
 }
-
-// TIP: ==== STATUS ====
-// The status function can return an actual status when that field is
-// available from the API (e.g., out.Status). Otherwise, you can use custom
-// statuses to communicate the states of the resource.
-//
-// Waiters consume the values returned by status functions. Design status so
-// that it can be reused by a create, update, and delete waiter, if possible.
 
 func statusServiceNetworkServiceAssociation(ctx context.Context, conn *vpclattice.Client, id string) retry.StateRefreshFunc {
 	return func() (interface{}, string, error) {
@@ -411,7 +380,7 @@ func statusServiceNetworkServiceAssociation(ctx context.Context, conn *vpclattic
 			return nil, "", err
 		}
 
-		return out, aws.ToString(out.Status), nil
+		return out, string(out.Status), nil
 	}
 }
 
